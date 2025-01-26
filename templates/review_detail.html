@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Review Details</title>
+    <style>
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .review-text { white-space: pre-wrap; line-height: 1.6; }
+        .album-info { color: #1a0dab; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Review Details</h1>
+        {% if album %}
+        <div class="album-info">
+            <h2>🎵 {{ album.artist }} - {{ album.title }}</h2>
+            <p>Year: {{ album.year }} | Genre: {{ album.genre }}</p>
+            <p>Rating: {{ album.rating }}/5</p>
+        </div>
+        {% endif %}
+        
+        <div class="review-text">{{ review.text }}</div>
+        
+        {% if review.matching_confidence %}
+        <p>Matching confidence: {{ "%.0f"|format(review.matching_confidence * 100) }}%</p>
+        {% endif %}
+        
+        <a href="/search?q={{ review.text[:50] }}">Find similar reviews</a>
+    </div>
+</body>
+</html>

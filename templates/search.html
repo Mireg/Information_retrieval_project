@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Music Review Search</title>
+    <style>
+        .result { margin: 20px; padding: 15px; border: 1px solid #eee; border-radius: 5px; }
+        .query-box { width: 500px; padding: 10px; font-size: 16px; }
+        .preview { color: #555; margin: 5px 0; }
+        .album { color: #1a0dab; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Music Review Search</h1>
+    <form action="/search" method="GET">
+        <input class="query-box" type="text" name="q" value="{{ query }}" 
+               placeholder="Search music reviews...">
+        <input type="submit" value="Search">
+    </form>
+    
+    <div id="results">
+        {% for result in results %}
+        <div class="result">
+            <div class="preview">{{ result.preview }}</div>
+            {% if result.album %}
+            <div class="album">🎵 {{ result.album }}</div>
+            {% endif %}
+            <div>Relevance: {{ result.score }}</div>
+            <a href="/review/{{ result.id }}">View details</a>
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html>
