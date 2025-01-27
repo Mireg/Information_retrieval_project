@@ -5,13 +5,15 @@ import pandas as pd
 import spacy
 import re
 import numpy as np
-from rank_bm25 import BM25Okapi
 from langdetect import detect
 import musicbrainzngs
 from collections import Counter, defaultdict
 import en_core_web_sm
 import pt_core_news_sm
 from fuzzywuzzy import fuzz
+from sklearn.feature_extraction.text import TfidfVectorizer
+from scipy.spatial.distance import cdist
+from flask import redirect
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -55,23 +57,51 @@ def clean_text(text):
     text = re.sub(r'[^a-zA-Z0-9\s\.,!?\'"-]', '', text)
     return re.sub(r'\s+', ' ', text).strip()
 
-# Search Engine
-class SearchEngine:
+class VectorSearch:
     def __init__(self):
-        self.bm25 = None
-        self.review_data = []
-
-    @cache.memoize(timeout=3600)
-    def build_index(self):
-        self.review_data = [
-            (str(review.id), clean_text(review.text)) 
-            for review in Review.query.all()
-        ]
-        tokenized = [doc[1].split() for doc in self.review_data]
-        self.bm25 = BM25Okapi(tokenized)
-        return self.bm25
-
-search_engine = SearchEngine()
+        self.vectorizer = TfidfVectorizer(
+            stop_words='english',
+            min_df=2,
+            max_df=0.95
+        )
+        self.review_vectors = None
+        self.review_ids = None
+        
+    def build_index(self, reviews):
+        """Build search index from reviews"""
+        texts = [review.text for review in reviews]
+        self.review_ids = [review.id for review in reviews]
+        self.review_vectors = self.vectorizer.fit_transform(texts)
+        
+    def search(self, query, method='cosine', top_k=50):
+        """Search reviews using specified similarity method"""
+        query_vector = self.vectorizer.transform([query])
+        
+        if method == 'cosine':
+            similarities = self._cosine_similarity(query_vector)
+        elif method == 'dice':
+            similarities = self._dice_coefficient(query_vector)
+        else:  # jaccard
+            similarities = self._jaccard_similarity(query_vector)
+            
+        top_indices = np.argsort(similarities)[-top_k:][::-1]
+        return [(self.review_ids[i], similarities[i]) for i in top_indices]
+    
+    def _cosine_similarity(self, query_vector):
+        """Calculate cosine similarity"""
+        return (query_vector @ self.review_vectors.T).toarray().flatten()
+    
+    def _dice_coefficient(self, query_vector):
+        """Calculate Dice coefficient"""
+        intersection = (query_vector @ self.review_vectors.T).toarray().flatten()
+        sum_vectors = np.asarray(query_vector.sum(1) + self.review_vectors.sum(1)).flatten()
+        return 2 * intersection / sum_vectors
+    
+    def _jaccard_similarity(self, query_vector):
+        """Calculate Jaccard similarity"""
+        intersection = (query_vector @ self.review_vectors.T).toarray().flatten()
+        sum_vectors = np.asarray(query_vector.sum(1) + self.review_vectors.sum(1)).flatten()
+        return intersection / (sum_vectors - intersection)
 
 class ReviewMatcher:
     def __init__(self):
@@ -267,34 +297,6 @@ def load_initial_data(sample_size=100):
             db.session.rollback()
             print(f"🔥 Critical error: {str(e)}")
 
-
-# Routes
-@app.route('/')
-def home():
-    return render_template('search.html')
-
-@app.route('/search')
-def search():
-    query = request.args.get('q', '')
-    if not query:
-        return render_template('search.html', results=[])
-    
-    bm25 = search_engine.build_index()
-    tokenized_query = clean_text(query).split()
-    doc_scores = bm25.get_scores(tokenized_query)
-    
-    results = sorted(
-        zip([doc[0] for doc in search_engine.review_data], doc_scores),
-        key=lambda x: x[1], 
-        reverse=True
-    )[:50]
-
-    return render_template('search.html',
-        results=[format_result(review_id, score) 
-                for review_id, score in results if score > 0],
-        query=query
-    )
-
 def format_result(review_id, score):
     review = db.session.get(Review, review_id)
     album = db.session.get(Album, review.album_id) if review.album_id else None
@@ -305,30 +307,53 @@ def format_result(review_id, score):
         'album': f"{album.artist} - {album.title}" if album else None
     }
 
-@app.route('/review/<int:review_id>')
-def review_detail(review_id):
-    review = db.session.get(Review, review_id)
-    if not review:
-        return "Review not found", 404
+vector_search=VectorSearch()
+
+def initialize_search():
+    with app.app_context():
+        reviews = Review.query.all()
+        vector_search.build_index(reviews)
+
+# Routes
+@app.route('/')
+def home():
+    return redirect('/search')
+
+@app.route('/search')
+def search():
+    query = request.args.get('q', '')
+    method = request.args.get('method', 'cosine')
     
-    # Lazy matching
-    if not review.album_id:
-        matcher = ReviewMatcher()
-        album_id, confidence = matcher.match_review(review.text)
-        if confidence > 0.5:
-            review.album_id = album_id
-            review.matching_confidence = confidence
-            db.session.commit()
+    if not query:
+        return render_template('search.html', results=[])
     
-    album = db.session.get(Album, review.album_id) if review.album_id else None
-    return render_template('review_detail.html',
-        review=review,
-        album=album
+    try:
+        results = vector_search.search(query, method=method)
+        formatted_results = [format_result(review_id, score) 
+                           for review_id, score in results if score > 0]
+    except Exception as e:
+        print(f"Search error: {str(e)}")
+        formatted_results = []
+    
+    return render_template('search.html',
+        results=formatted_results,
+        query=query,
+        method=method
     )
 
-# Templates
-# Create these files in templates/ directory:
-# search.html and review_detail.html (see note below)
+@app.route('/review/<int:review_id>')
+def review_detail(review_id):
+    try:
+        review = db.session.get(Review, review_id)
+        print(f"Review confidence: {review.matching_confidence}")  # Debug
+        if not review:
+            return "Review not found", 404
+        
+        album = db.session.get(Album, review.album_id) if review.album_id else None
+        return render_template('review_detail.html', review=review, album=album)
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return "Error loading review", 500
 
 if __name__ == '__main__':
     with app.app_context():
@@ -339,5 +364,8 @@ if __name__ == '__main__':
         
         # Load initial data
         load_initial_data(sample_size=100)  # Start with small sample
+        
+        # Initialize search index
+        initialize_search()
         
     app.run(debug=True)
