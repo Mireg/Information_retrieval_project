@@ -1,4 +1,4 @@
 rym_venv
 instance
 data
-.pkl
+*.pkl
