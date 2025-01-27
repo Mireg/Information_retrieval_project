@@ -58,7 +58,21 @@
             padding: 0.4rem 0.8rem;
             border-radius: 4px;
             font-size: 0.8rem;
-            margin-right: 1rem;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .entities-section {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: var(--input-bg);
+            border-radius: 6px;
+        }
+        .entity-type {
+            margin: 1rem 0;
+        }
+        .entity-type-label {
+            font-weight: bold;
+            margin-bottom: 0.5rem;
         }
         a {
             color: var(--accent);
@@ -71,24 +85,33 @@
 </head>
 <body>
     <nav class="nav">
-        <a href="/search">Home</a>
+        <a href="/" onclick="window.location='/search'; return false;">Home</a>
     </nav>
-
     <div class="review-container">
-        {% if album %}
         <div class="album-header">
-            <h2 style="margin: 0;">{{ album.artist }} - {{ album.title }}</h2>
+            <h2 style="margin: 0;">
+                {% if album %}
+                    {{ album.artist }} - {{ album.title }}
+                {% else %}
+                    Unknown
+                {% endif %}
+            </h2>
             <div class="album-meta">
-                <div>Year: {{ album.year }}</div>
-                <div>Genre: {{ album.genre }}</div>
-                <div>Rating: {{ album.rating|round(2) }}/5</div>
+                <div>Year: {{ album.year if album.year else 'Unknown' }}</div>
+                <div>Genre: {{ album.genre if album.genre else 'Unknown' }}</div>
+                <div>Rating: {{ album.rating|round(2) if album.rating else 'Unknown' }}/5</div>
+                <div>Match Confidence: {{ "%.0f"|format(review.matching_confidence * 100) if review.matching_confidence else 'Unknown' }}%</div>
             </div>
         </div>
-        {% endif %}
         
         <div class="review-text">{{ review.text|safe }}</div>
         
         <div style="margin-top: 2rem;">
+            {% if review.rating %}
+            <span class="meta-tag" style="background: var(--accent); color: white;">
+                Reviewer Rating: {{ review.rating }}/5
+            </span>
+            {% endif %}
             {% if review.matching_confidence %}
             <span class="meta-tag">
                 Match: {{ "%.0f"|format(review.matching_confidence * 100) }}%
@@ -98,7 +121,35 @@
                 Language: {{ review.language|upper }}
             </span>
         </div>
-        
+        {% if entities %}
+        <div class="entities-section">
+            <h3 style="margin-top: 0;">Detected Entities</h3>
+            <!-- Debug statement to check entities -->
+            <pre>{{ entities|safe }}</pre>
+            <!-- Artists -->
+            {% if entities.ARTIST %}
+            <div class="entity-type">
+                <div class="entity-type-label">Artists</div>
+                <div>
+                    {% for artist in entities.ARTIST %}
+                        <span class="meta-tag">{{ artist }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            <!-- Albums/Songs -->
+            {% if entities.WORK_OF_ART %}
+            <div class="entity-type">
+                <div class="entity-type-label">Albums & Songs</div>
+                <div>
+                    {% for work in entities.WORK_OF_ART %}
+                        <span class="meta-tag">{{ work }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        {% endif %}
+        </div>
         <div style="margin-top: 2rem;">
             <a href="/search?q={{ review.text[:50]|urlencode }}">
                 Find similar reviews →

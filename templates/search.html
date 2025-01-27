@@ -79,32 +79,44 @@
 </head>
 <body>
     <nav class="nav">
-        <a href="/search">Home</a>
-    </nav>
-
+        <a href="/" onclick="window.location='/search'; return false;">Home</a>
+    </nav>    
     <div class="search-container">
         <form action="/search" method="GET" class="search-box">
-            <input type="text" name="q" class="search-input" placeholder="Search music reviews..." value="{{ query }}">
-            <select name="method" class="search-select">
+            <label for="search-input" style="display:none;">Search</label>
+            <input id="search-input" type="text" name="q" class="search-input" placeholder="Search music reviews..." value="{{ query }}">
+            <label for="method-select" style="display:none;">Search Method</label>
+            <select id="method-select" name="method" class="search-select">
                 <option value="cosine" {% if method == 'cosine' %}selected{% endif %}>Cosine</option>
                 <option value="dice" {% if method == 'dice' %}selected{% endif %}>Dice</option>
                 <option value="jaccard" {% if method == 'jaccard' %}selected{% endif %}>Jaccard</option>
             </select>
             <button type="submit" class="search-button">Search</button>
         </form>
-    </div>
-
-    {% for result in results %}
-    <div class="result-card">
-        <div>{{ result.preview }}</div>
-        {% if result.album %}
-        <div style="color: var(--accent); margin: 0.5rem 0;">{{ result.album }}</div>
-        {% endif %}
-        <div style="display: flex; justify-content: space-between; margin-top: 1rem;">
-            <span style="opacity: 0.7;">Match: {{ result.score }}</span>
-            <a href="/review/{{ result.id }}" style="color: var(--accent);">Read full review →</a>
+        <div class="stats-container" style="text-align: center; padding-top: 1.5rem; margin-top: 1.5rem; border-top: 1px solid var(--input-bg);">
+            <span>Total Albums: {{ album_count }}</span> 
+            <span style="margin: 0 1rem;">|</span>
+            <span>Total Reviews: {{ review_count }}</span>
         </div>
     </div>
-    {% endfor %}
+
+    {% if results %}
+        {% for result in results %}
+        <div class="result-card">
+            <div>{{ result.preview }}</div>
+            {% if result.album %}
+            <div style="color: var(--accent); margin: 0.5rem 0;">{{ result.album }}</div>
+            {% endif %}
+            <div style="display: flex; justify-content: space-between; margin-top: 1rem;">
+                <span style="opacity: 0.7;">Match: {{ result.score }} | Relevance: {{ result.relevance }}</span>
+                <a href="/review/{{ result.id }}" style="color: var(--accent);">Read full review →</a>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div style="text-align: center; margin-top: 2rem;">
+            <p>No results found. Try another search term or method.</p>
+        </div>
+    {% endif %}
 </body>
 </html>
