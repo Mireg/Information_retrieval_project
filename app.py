@@ -8,7 +8,8 @@ import re
 from fuzzywuzzy import fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from pathlib import Path
-import pickle
+import json
+import plotly
 
 # Initialize Flask and extensions
 app = Flask(__name__)
@@ -130,6 +131,8 @@ class Review(db.Model):
     album_id = db.Column(db.Integer, db.ForeignKey('album.id'))
     matching_confidence = db.Column(db.Float)
 
+
+
 class VectorSearch:
     def __init__(self):
         self.vectorizer = TfidfVectorizer(
@@ -141,6 +144,38 @@ class VectorSearch:
         )
         self.review_vectors = None
         self.review_ids = None
+
+    def cosine_similarity(self, v1, v2):
+        dot_product = np.dot(v1, v2)
+        norm1 = np.linalg.norm(v1)
+        norm2 = np.linalg.norm(v2)
+        return dot_product / (norm1 * norm2)
+        
+    def dice_similarity(self, v1, v2):
+        dot_product = np.dot(v1, v2)
+        sum1 = np.sum(v1)
+        sum2 = np.sum(v2)
+        return 2 * dot_product / (sum1 + sum2)
+
+    def jaccard_similarity(self, v1, v2):
+        dot_product = np.dot(v1, v2)
+        sum1 = np.sum(v1)
+        sum2 = np.sum(v2)
+        return dot_product / (sum1 + sum2 - dot_product)
+
+    def search(self, query, method='cosine', top_k=10):
+        query_vector = self.vectorizer.transform([query]).toarray().flatten()
+        doc_vectors = self.review_vectors.toarray()
+        
+        if method == 'cosine':
+            similarities = [self.cosine_similarity(query_vector, doc) for doc in doc_vectors]
+        elif method == 'dice':
+            similarities = [self.dice_similarity(query_vector, doc) for doc in doc_vectors]
+        elif method == 'jaccard':
+            similarities = [self.jaccard_similarity(query_vector, doc) for doc in doc_vectors]
+            
+        top_indices = np.argsort(similarities)[-top_k:][::-1]
+        return [(self.review_ids[idx], similarities[idx]) for idx in top_indices if similarities[idx] > 0]
     
     def build_index(self, reviews):
         """Build search index from reviews"""
@@ -288,13 +323,23 @@ def search():
     review_count = Review.query.count()
     results = []
 
-    # Perform search using the specified method
-    if vector_search.review_vectors is not None:
-        query_vector = vector_search.vectorizer.transform([query])
-        similarities = vector_search.review_vectors.dot(query_vector.T).toarray().flatten()
+    if query and vector_search.review_vectors is not None:
+        # Convert query to vector
+        query_vector = vector_search.vectorizer.transform([query]).toarray().flatten()
+        doc_vectors = vector_search.review_vectors.toarray()
         
-        # Sort based on similarity
+        # Calculate similarities based on selected method
+        if method == 'cosine':
+            similarities = [vector_search.cosine_similarity(query_vector, doc) for doc in doc_vectors]
+        elif method == 'dice':
+            similarities = [vector_search.dice_similarity(query_vector, doc) for doc in doc_vectors]
+        elif method == 'jaccard':
+            similarities = [vector_search.jaccard_similarity(query_vector, doc) for doc in doc_vectors]
+        
+        # Get top 10 results
         top_indices = np.argsort(similarities)[-10:][::-1]
+        
+        # Format results
         for idx in top_indices:
             if similarities[idx] > 0:
                 review_id = vector_search.review_ids[idx]
@@ -309,8 +354,12 @@ def search():
                         'relevance': f"{(similarities[idx] * 100):.1f}%"
                     })
 
-    return render_template('search.html', results=results, query=query, method=method, album_count=album_count, review_count=review_count)
-
+    return render_template('search.html', 
+                         results=results, 
+                         query=query, 
+                         method=method, 
+                         album_count=album_count, 
+                         review_count=review_count)
 
 def format_result(review_id, score):
     review = Review.query.get(review_id)
@@ -325,11 +374,42 @@ def format_result(review_id, score):
         'album': f"{album.artist} - {album.title}" if album else "Unknown Album"
     }
 
+@app.route('/visualizations')
+def visualizations():
+    # Add link in nav
+    reviews = Review.query.all()
+    
+    # Rating distribution
+    ratings = [r.rating for r in reviews if r.rating is not None]
+    rating_dist = np.histogram(ratings, bins=10)[0].tolist()
+    print("Rating distribution:", rating_dist)  # Debug print
+    
+    # Genre distribution
+    genre_counts = {}
+    for review in reviews:
+        if review.album and review.album.genre:
+            genre = review.album.genre
+            genre_counts[genre] = genre_counts.get(genre, 0) + 1
+    print("Genre counts:", genre_counts)  # Debug print
+
+    # Year distribution  
+    year_counts = {}
+    for review in reviews:
+        if review.album and review.album.year:
+            year = review.album.year
+            year_counts[year] = year_counts.get(year, 0) + 1
+    print("Year counts:", year_counts)  # Debug print
+    
+    return render_template('visualization.html', 
+                         rating_dist=rating_dist,
+                         genre_counts=genre_counts,
+                         year_counts=dict(sorted(year_counts.items())))
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         print("Created fresh database tables")
-        matcher = initialize_database(sample_size=1000)
+        matcher = initialize_database(sample_size=100)
         initialize_search()
         
     app.run(debug=True)

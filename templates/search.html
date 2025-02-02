@@ -1,86 +1,6 @@
-<!-- search.html -->
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Music Analysis</title>
-    <style>
-        :root {
-            --bg-dark: #1d2025;
-            --nav-bg: #242830;
-            --input-bg: #2d3239;
-            --text: #e4e4e4;
-            --accent: #00b4db;
-        }
-        body {
-            background: var(--bg-dark);
-            color: var(--text);
-            font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, sans-serif;
-            margin: 0;
-        }
-        .nav {
-            background: var(--nav-bg);
-            padding: 1.2rem 2rem;
-            font-size: 1.1rem;
-        }
-        .nav a {
-            color: var(--text);
-            text-decoration: none;
-            margin-right: 2rem;
-        }
-        .search-container {
-            padding: 2rem;
-            margin: 2rem;
-            border-radius: 8px;
-            background: var(--nav-bg);
-        }
-        .search-box {
-            display: flex;
-            gap: 1rem;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        .search-input {
-            flex: 1;
-            padding: 0.8rem 1.2rem;
-            font-size: 1rem;
-            border: none;
-            border-radius: 6px;
-            background: var(--input-bg);
-            color: var(--text);
-        }
-        .search-select {
-            padding: 0.8rem 1.2rem;
-            font-size: 1rem;
-            border: none;
-            border-radius: 6px;
-            background: var(--input-bg);
-            color: var(--text);
-            width: 140px;
-        }
-        .search-button {
-            padding: 0.8rem 2rem;
-            font-size: 1rem;
-            border: none;
-            border-radius: 6px;
-            background: var(--accent);
-            color: white;
-            cursor: pointer;
-        }
-        .search-button:hover {
-            opacity: 0.9;
-        }
-        .result-card {
-            background: var(--nav-bg);
-            padding: 1rem;
-            margin: 1rem 2rem;
-            border-radius: 6px;
-        }
-    </style>
-</head>
-<body>
-    <nav class="nav">
-        <a href="/" onclick="window.location='/search'; return false;">Home</a>
-    </nav>    
+{% extends "base.html" %}
+
+{% block content %}
     <div class="search-container">
         <form action="/search" method="GET" class="search-box">
             <label for="search-input" style="display:none;">Search</label>
@@ -93,7 +13,7 @@
             </select>
             <button type="submit" class="search-button">Search</button>
         </form>
-        <div class="stats-container" style="text-align: center; padding-top: 1.5rem; margin-top: 1.5rem; border-top: 1px solid var(--input-bg);">
+        <div class="stats-container">
             <span>Total Albums: {{ album_count }}</span> 
             <span style="margin: 0 1rem;">|</span>
             <span>Total Reviews: {{ review_count }}</span>
@@ -114,9 +34,10 @@
         </div>
         {% endfor %}
     {% else %}
+        {% if query %}
         <div style="text-align: center; margin-top: 2rem;">
             <p>No results found. Try another search term or method.</p>
         </div>
+        {% endif %}
     {% endif %}
-</body>
-</html>
+{% endblock %}
