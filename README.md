@@ -10,7 +10,7 @@ System analizy recenzji muzycznych zbudowany w oparciu o Flask, przetwarzający 
 | Kategoria                  | Podkategoria               | Dostępne Punkty | Zdobyte Punkty | Uzasadnienie                                                                 |
 |----------------------------|----------------------------|-----------------|----------------|------------------------------------------------------------------------------|
 | Aplikacja Webowa           | Implementacja Flask        | 15              | 15             | Pełna implementacja frameworku Flask                                        |
-| Rozmiar Zestawu Danych     | Liczba Rekordów            | 10              | 10             | ~85 000 rekordów łącznie                                                    |
+| Rozmiar Zestawu Danych     | Liczba Rekordów            | 10              | 10             | ~25 000 rekordów łącznie                                                    |
 | Przechowywanie Danych      | Baza Danych SQL            | 10              | 10             | SQLite z SQLAlchemy                                                         |
 | Unikalne Funkcje           | Liczba Pól                 | 10              | 8              | 16 unikalnych pól w tabelach Albumów i Recenzji                             |
 | Różnorodność Źródeł Danych | Więcej niż Jedno Źródło    | 15              | 5              | Dwa zestawy danych (albums.csv, reviews.csv)                                |
