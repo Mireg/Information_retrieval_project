@@ -1,4 +1,4 @@
-# O Systemie Analizy Muzyki
+# System wyszukiwawczy  - recenzje muzyczne
 
 ## Przegląd Projektu
 System analizy recenzji muzycznych zbudowany w oparciu o Flask, przetwarzający ponad 20 000 recenzji z Rate Your Music. Recenzje nie zawierają informacji o albumie, który został oceniony, więc system przypisuje przewidywane albumy na podstawie kontekstu. Zestaw danych zawiera drugą tabelę SQL z danymi dotyczącymi 5000 najczęściej ocenianych albumów na RYM.
