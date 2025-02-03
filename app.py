@@ -157,11 +157,12 @@ class GazetterMatcher:
 
 class VectorSearch:
     def __init__(self):
-        self.vectorizer = TfidfVectorizer()
+        self.vectorizer = TfidfVectorizer(min_df=5)
         self.index = None
         self.vectors = None
         self.id_map = {}
         self.is_initialized = False
+        self.batch_size = 10000  # For batch processing
 
     def fit(self, documents):
         """Initialize and fit the vectorizer"""
@@ -208,37 +209,42 @@ class VectorSearch:
             return []
     
     def search(self, query: str, method: str = 'cosine', k: int = 20) -> List[Tuple[int, float]]:
-        """Search with multiple similarity metrics"""
         if not self.is_initialized:
             raise RuntimeError("Vector search not initialized")
             
         try:
+            # Convert to dense array once
             query_vector = self.vectorizer.transform([query]).toarray()[0]
             
             if method == 'cosine':
                 return self.cosine_search(query_vector, k)
             
-            # Vectorized calculations for dice/jaccard
-            dot_products = np.dot(self.vectors, query_vector)
-            query_sum = np.sum(query_vector)
-            vector_sums = np.sum(self.vectors, axis=1)
+            # Process in batches
+            scores = []
+            query_sum = np.sum(np.abs(query_vector))
             
-            if method == 'dice':
-                scores = 2 * dot_products / (query_sum + vector_sums)
-            elif method == 'jaccard':
-                scores = dot_products / (query_sum + vector_sums - dot_products)
-            else:
-                raise ValueError(f"Unknown method: {method}")
+            for i in range(0, self.vectors.shape[0], self.batch_size):
+                batch = self.vectors[i:i+self.batch_size]
                 
-            # Get top k results efficiently
-            top_k_idx = np.argpartition(scores, -k)[-k:]
-            top_k_idx = top_k_idx[np.argsort(scores[top_k_idx])][::-1]
-            
-            results = [(self.id_map[idx], float(scores[idx])) 
-                      for idx in top_k_idx]
-            
-            gc.collect()  # Memory cleanup
-            return results
+                # Dense numpy operations
+                dot_products = np.dot(batch, query_vector)
+                vector_sums = np.sum(np.abs(batch), axis=1)
+                
+                if method == 'dice':
+                    batch_scores = 2 * dot_products / (query_sum + vector_sums + 1e-8)
+                else:  # jaccard  
+                    batch_scores = dot_products / (query_sum + vector_sums - dot_products + 1e-8)
+                
+                # Filter near-zero scores
+                nonzero_scores = [(i+idx, score) for idx, score in enumerate(batch_scores) if score > 1e-6]
+                scores.extend(nonzero_scores)
+                
+            if not scores:
+                return []
+                
+            # Sort and return top k
+            scores.sort(key=lambda x: x[1], reverse=True)
+            return [(self.id_map[idx], float(score)) for idx, score in scores[:k]]
             
         except Exception as e:
             print(f"Search failed: {str(e)}")
@@ -525,7 +531,6 @@ def initialize_search():
 
 if __name__ == '__main__':
     with app.app_context():
-        #db.drop_all()
         db.create_all()
         if Album.query.count() == 0:
             print("Database empty, initializing with sample dataset...")
