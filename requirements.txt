@@ -1,0 +1,19 @@
+# Web Framework
+Flask
+Flask-SQLAlchemy
+Flask-Caching
+
+# Database
+SQLAlchemy
+
+# Vector Search & ML
+faiss-cpu
+numpy
+scikit-learn
+pandas
+
+# Text Processing
+fuzzywuzzy
+python-Levenshtein
+textblob
+langdetect

@@ -534,7 +534,8 @@ if __name__ == '__main__':
         db.create_all()
         if Album.query.count() == 0:
             print("Database empty, initializing with sample dataset...")
-            matcher = initialize_database(sample_size=1000)
+            # lowered review number for efficiency
+            matcher = initialize_database(sample_size=21000)
             initialize_search()
             print("Database initialized")
         else:
