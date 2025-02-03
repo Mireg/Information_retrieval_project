@@ -3,7 +3,9 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_caching import Cache
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
+import faiss
 import numpy as np
+from typing import List, Tuple
 from collections import defaultdict
 import re
 from fuzzywuzzy import fuzz
@@ -11,6 +13,8 @@ from textblob import TextBlob
 from langdetect import detect
 import concurrent.futures
 from sqlalchemy import Index, func
+from time import time
+import gc
 
 # Initialize Flask and extensions
 app = Flask(__name__)
@@ -26,6 +30,21 @@ cache = Cache(config={
 })
 cache.init_app(app)
 db = SQLAlchemy(app)
+
+class Album(db.Model):
+    __tablename__ = 'album'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    artist = db.Column(db.String(200), nullable=False)
+    year = db.Column(db.Integer)
+    genre = db.Column(db.String(100))
+    rating = db.Column(db.Float)
+    reviews = db.relationship('Review', backref='album', lazy='dynamic')
+
+    __table_args__ = (
+        Index('idx_album_search', 'title', 'artist'),
+        Index('idx_album_filters', 'year', 'genre', 'rating'),
+    )
 
 class Review(db.Model):
     __tablename__ = 'review'
@@ -43,21 +62,6 @@ class Review(db.Model):
         Index('idx_review_filters', 'language', 'rating', 'album_id'),
         Index('idx_review_search', 'text'),
         Index('idx_review_sentiment', 'sentiment', 'sentiment_score'),
-    )
-
-class Album(db.Model):
-    __tablename__ = 'album'
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(200), nullable=False)
-    artist = db.Column(db.String(200), nullable=False)
-    year = db.Column(db.Integer)
-    genre = db.Column(db.String(100))
-    rating = db.Column(db.Float)
-    reviews = db.relationship('Review', backref='album', lazy='dynamic')
-
-    __table_args__ = (
-        Index('idx_album_search', 'title', 'artist'),
-        Index('idx_album_filters', 'year', 'genre', 'rating'),
     )
 
 class ReviewVector(db.Model):
@@ -151,64 +155,94 @@ class GazetterMatcher:
         
         return best_match
 
-from sklearn.decomposition import PCA
-
 class VectorSearch:
-    def __init__(self, n_components=50):
-        self.vectorizer = TfidfVectorizer(stop_words='english', min_df=2, max_df=0.95, ngram_range=(1, 2))
-        self.pca = PCA(n_components=n_components)  # Reduce to 50 components
-        self.fitted = False
-        self.vector_cache = {}
+    def __init__(self):
+        self.vectorizer = TfidfVectorizer()
+        self.index = None
+        self.vectors = None
+        self.id_map = {}
+        self.is_initialized = False
 
-    def fit(self, texts):
-        tfidf_matrix = self.vectorizer.fit_transform(texts)
-        self.pca.fit(tfidf_matrix.toarray())  # Fit PCA to the TF-IDF matrix
+    def fit(self, documents):
+        """Initialize and fit the vectorizer"""
+        self.vectorizer.fit(documents)
+        self.is_initialized = True
 
-    def transform(self, texts):
-        tfidf_matrix = self.vectorizer.transform(texts)
-        reduced_matrix = self.pca.transform(tfidf_matrix.toarray())  # Reduce dimensionality
-        return reduced_matrix
+    def transform(self, documents):
+        """Transform documents to vectors"""
+        if not self.is_initialized:
+            raise RuntimeError("Vectorizer not initialized")
+        return self.vectorizer.transform(documents).toarray()
 
-
-    @cache.memoize(timeout=3600)
-    def get_vector_cache(self):
-        if not self.vector_cache:
-            self.vector_cache = {rv.review_id: rv.vector 
-                               for rv in ReviewVector.query.all()}
-        return self.vector_cache
-
-    def calculate_similarity(self, query_vector, stored_vector, method='cosine'):
-        if method == 'cosine':
-            return np.dot(query_vector, stored_vector) / (
-                np.linalg.norm(query_vector) * np.linalg.norm(stored_vector))
-        elif method == 'dice':
-            dot_product = np.dot(query_vector, stored_vector)
-            return 2 * dot_product / (np.sum(query_vector) + np.sum(stored_vector))
-        else:  # jaccard
-            dot_product = np.dot(query_vector, stored_vector)
-            return dot_product / (np.sum(query_vector) + np.sum(stored_vector) - dot_product)
-
-    def search(self, query, method='cosine', top_n=10):
-        query_vector = self.vectorizer.transform([query]).toarray()[0]
-        vector_cache = self.get_vector_cache()
+    def build_index(self, vectors: np.ndarray, review_ids: List[int]):
+        """Build FAISS index from vectors"""
+        dim = vectors.shape[1]
+        self.index = faiss.IndexFlatIP(dim)
+        self.vectors = vectors  # Store for dice/jaccard
+        normalized_vectors = vectors / np.linalg.norm(vectors, axis=1)[:, np.newaxis]
+        self.index.add(normalized_vectors.astype('float32'))
+        self.id_map = {i: rid for i, rid in enumerate(review_ids)}
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            future_to_id = {
-                executor.submit(self.calculate_similarity, 
-                              query_vector, vec, method): rid
-                for rid, vec in vector_cache.items()
-            }
+    def cosine_search(self, query_vector: np.ndarray, k: int) -> List[Tuple[int, float]]:
+        """Perform cosine similarity search using FAISS"""
+        if query_vector.ndim == 1:
+            query_vector = query_vector.reshape(1, -1)  # Convert to 2D array
             
-            similarities = []
-            for future in concurrent.futures.as_completed(future_to_id):
-                rid = future_to_id[future]
-                try:
-                    similarity = future.result()
-                    similarities.append((rid, similarity))
-                except Exception as e:
-                    print(f"Error calculating similarity: {e}")
-        
-        return sorted(similarities, key=lambda x: x[1], reverse=True)[:top_n]
+        if query_vector.shape[1] != self.index.d:
+            raise ValueError(f"Query vector dimension {query_vector.shape[1]} "
+                           f"does not match index dimension {self.index.d}")
+            
+        try:
+            normalized_query = query_vector / np.linalg.norm(query_vector)
+            scores, indices = self.index.search(
+                normalized_query.astype('float32'), 
+                min(k, self.index.ntotal)
+            )
+            
+            return [(self.id_map[idx], float(score)) 
+                    for score, idx in zip(scores[0], indices[0])
+                    if idx != -1]  # Filter invalid indices
+                    
+        except Exception as e:
+            print(f"Search failed: {str(e)}")
+            return []
+    
+    def search(self, query: str, method: str = 'cosine', k: int = 20) -> List[Tuple[int, float]]:
+        """Search with multiple similarity metrics"""
+        if not self.is_initialized:
+            raise RuntimeError("Vector search not initialized")
+            
+        try:
+            query_vector = self.vectorizer.transform([query]).toarray()[0]
+            
+            if method == 'cosine':
+                return self.cosine_search(query_vector, k)
+            
+            # Vectorized calculations for dice/jaccard
+            dot_products = np.dot(self.vectors, query_vector)
+            query_sum = np.sum(query_vector)
+            vector_sums = np.sum(self.vectors, axis=1)
+            
+            if method == 'dice':
+                scores = 2 * dot_products / (query_sum + vector_sums)
+            elif method == 'jaccard':
+                scores = dot_products / (query_sum + vector_sums - dot_products)
+            else:
+                raise ValueError(f"Unknown method: {method}")
+                
+            # Get top k results efficiently
+            top_k_idx = np.argpartition(scores, -k)[-k:]
+            top_k_idx = top_k_idx[np.argsort(scores[top_k_idx])][::-1]
+            
+            results = [(self.id_map[idx], float(scores[idx])) 
+                      for idx in top_k_idx]
+            
+            gc.collect()  # Memory cleanup
+            return results
+            
+        except Exception as e:
+            print(f"Search failed: {str(e)}")
+            return []
 
 def analyze_sentiment(text):
     analysis = TextBlob(text)
@@ -228,7 +262,14 @@ def detect_language(text):
 
 def process_reviews_batch(batch_df, matcher, album_lookup):
     reviews = []
-    for _, row in batch_df.iterrows():
+    processed_count = 0
+    total_in_batch = len(batch_df)
+    
+    for idx, row in batch_df.iterrows():
+        processed_count += 1
+        if processed_count % 100 == 0:  # Log every 100 reviews
+            print(f"Processing review {processed_count}/{total_in_batch} in current batch...")
+            
         if pd.isna(row['Review']) or pd.isna(row['Rating']):
             continue
             
@@ -238,6 +279,9 @@ def process_reviews_batch(batch_df, matcher, album_lookup):
             
         artist, album, confidence = matcher.find_best_match(text)
         album_id = album_lookup.get((artist, album)) if artist and album else None
+        
+        if artist and album:  # Log successful matches
+            print(f"Found match: {artist} - {album} (confidence: {confidence:.2f})")
         
         sentiment, sentiment_score = analyze_sentiment(text)
         reviews.append(Review(
@@ -249,6 +293,8 @@ def process_reviews_batch(batch_df, matcher, album_lookup):
             sentiment_score=sentiment_score,
             language=detect_language(text)
         ))
+
+    print(f"✅ Batch complete: processed {len(reviews)} valid reviews out of {total_in_batch} total")
     return reviews
 
 def initialize_database(sample_size=16000):
@@ -287,16 +333,21 @@ def initialize_database(sample_size=16000):
         
         total_reviews = 0
         chunk_size = 5000
-        
+
+        print(f"\n🚀 Starting review processing with chunk size: {chunk_size}")
+        print(f"Total reviews to process: {len(reviews_df)}")
+
         for i in range(0, len(reviews_df), chunk_size):
+            print(f"\n📦 Processing batch {(i//chunk_size)+1}/{(len(reviews_df)//chunk_size)+1}")
             chunk = reviews_df.iloc[i:i+chunk_size]
             reviews = process_reviews_batch(chunk, matcher, album_lookup)
             
             if reviews:
+                print("💾 Saving batch to database...")
                 db.session.bulk_save_objects(reviews)
                 db.session.commit()
                 total_reviews += len(reviews)
-                print(f"Processed {total_reviews} reviews")
+                print(f"✨ Total reviews processed so far: {total_reviews}/{len(reviews_df)}")
         
         return matcher
         
@@ -326,7 +377,7 @@ def get_filtered_reviews(language=None, year_from=None, year_to=None,
         query = query.filter(Album.genre == genre)
         
     return query.all()
-
+@app.route('/')
 @app.route('/search')
 def search():
     query = request.args.get('q', '')
@@ -340,49 +391,34 @@ def search():
     page = request.args.get('page', 1, type=int)
     per_page = 20
 
-    # Filter Reviews First to reduce the result set
-    query = Review.query.join(Album)
-    
-    if language:
-        query = query.filter(Review.language == language)
-    if rating_from:
-        query = query.filter(Review.rating >= rating_from)
-    if rating_to:
-        query = query.filter(Review.rating <= rating_to)
-    if year_from:
-        query = query.filter(Album.year >= year_from)
-    if year_to:
-        query = query.filter(Album.year <= year_to)
-    if genre:
-        query = query.filter(Album.genre == genre)
-
-    filtered_reviews = query.all()
-    review_ids = {r.id for r in filtered_reviews}
-
-    # Run the vector search on the filtered reviews
-    similarities = vector_search.search(query, method)
-    matched_results = [
-        (rid, score) for rid, score in similarities
-        if rid in review_ids
-    ]
-    
-    # Paginate results
-    start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
-    page_results = matched_results[start_idx:end_idx]
-    
     results = []
-    for review_id, score in page_results:
-        review = Review.query.get(review_id)
-        if review:
-            album = review.album
-            results.append({
-                'id': review_id,
-                'preview': review.text[:200] + '...',
-                'score': f"{score:.2f}",
-                'album': f"{album.artist} - {album.title}" if album else "Unknown Album",
-                'relevance': f"{(score * 100):.1f}%"
-            })
+    if query:
+        filtered_reviews = get_filtered_reviews(
+            language, year_from, year_to, rating_from, rating_to, genre)
+        review_ids = {r.id for r in filtered_reviews}
+        
+        similarities = vector_search.search(query, method=method, k=len(review_ids))
+        matched_results = [
+            (rid, score) for rid, score in similarities
+            if rid in review_ids
+        ]
+        
+        # Paginate results
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        page_results = matched_results[start_idx:end_idx]
+        
+        for review_id, score in page_results:
+            review = Review.query.get(review_id)
+            if review:
+                album = review.album
+                results.append({
+                    'id': review_id,
+                    'preview': review.text[:200] + '...',
+                    'score': f"{score:.2f}",
+                    'album': f"{album.artist} - {album.title}" if album else "Unknown Album",
+                    'relevance': f"{(score * 100):.1f}%"
+                })
 
     # Get counts and metadata
     album_count = db.session.query(func.count(Album.id)).scalar()
@@ -464,35 +500,32 @@ def about():
     return render_template('about.html')
 
 def initialize_search():
+    """Initialize the vector search engine"""
+    global vector_search
+    
     try:
         reviews = Review.query.all()
-        texts = [review.text for review in reviews]
-        vector_search.vectorizer.fit(texts)
+        if not reviews:
+            raise ValueError("No reviews found in database")
+            
+        documents = [review.text for review in reviews]
+        review_ids = [review.id for review in reviews]
         
-        # Process in batches
-        batch_size = 1000
-        for i in range(0, len(reviews), batch_size):
-            batch = reviews[i:i+batch_size]
-            vectors = vector_search.vectorizer.transform([r.text for r in batch])
-            
-            vector_objects = []
-            for review, vector in zip(batch, vectors):
-                vector_dense = vector.toarray().squeeze()
-                vector_objects.append(
-                    ReviewVector(review_id=review.id, vector=vector_dense)
-                )
-            
-            db.session.bulk_save_objects(vector_objects)
-            db.session.commit()
-            print(f"Processed vectors for {i + len(batch)} reviews")
-            
+        vector_search = VectorSearch()
+        vector_search.fit(documents)  # Changed from fit_vectorizer
+        vectors = vector_search.transform(documents)
+        vector_search.build_index(vectors, review_ids)
+        
+        print("Search engine initialized successfully")
+        return vector_search
+        
     except Exception as e:
-        print(f"Error initializing search: {str(e)}")
+        print(f"Failed to initialize search: {str(e)}")
         raise
 
 if __name__ == '__main__':
     with app.app_context():
-        db.drop_all()
+        #db.drop_all()
         db.create_all()
         if Album.query.count() == 0:
             print("Database empty, initializing with sample dataset...")
