@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="search-container">
+    <h1>About Music Analysis System</h1>
+    
+    <div class="section">
+        <h2>Project Overview</h2>
+        <p>A music review analysis system built with Flask, processing over 80,000 reviews from Rate Your Music. The reviews don't include an album that was reviewed, so the system is assigning predicted albums based on context. The dataset includes second SQL table containg data on 5000 most rated albums on RYM.</p>
+    </div>
+
+    <div class="section" style="margin-top: 2rem;">
+        <h2>Implementation Details & Points Analysis</h2>
+        <div class="details-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Subcategory</th>
+                        <th>Available Points</th>
+                        <th>Claimed Points</th>
+                        <th>Justification</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Web Application</td>
+                        <td>Flask Implementation</td>
+                        <td>15</td>
+                        <td>15</td>
+                        <td>Complete Flask framework implementation</td>
+                    </tr>
+                    <tr>
+                        <td>Dataset Size</td>
+                        <td>Records Count</td>
+                        <td>10</td>
+                        <td>10</td>
+                        <td>~85,000 records total</td>
+                    </tr>
+                    <tr>
+                        <td>Database Storage</td>
+                        <td>SQL Database</td>
+                        <td>10</td>
+                        <td>10</td>
+                        <td>SQLite with SQLAlchemy</td>
+                    </tr>
+                    <tr>
+                        <td>Unique Features</td>
+                        <td>Field Count</td>
+                        <td>10</td>
+                        <td>8</td>
+                        <td>16 unique fields across Albums and Reviews tables</td>
+                    </tr>
+                    <tr>
+                        <td>Data Source Diversity</td>
+                        <td>Multiple Sources</td>
+                        <td>15</td>
+                        <td>5</td>
+                        <td>Two datasets (albums.csv, reviews.csv)</td>
+                    </tr>
+                    <tr>
+                        <td>Data Quality Enhancement</td>
+                        <td>Field Improvements</td>
+                        <td>10</td>
+                        <td>6</td>
+                        <td>Sentiment analysis, language detection, confidence scoring</td>
+                    </tr>
+                    <tr>
+                        <td>Search Filters</td>
+                        <td>Filter Options</td>
+                        <td>10</td>
+                        <td>6</td>
+                        <td>Language, year, rating, genre, similarity method</td>
+                    </tr>
+                    <tr>
+                        <td>Text Generation</td>
+                        <td>Rules-based Analysis</td>
+                        <td>10</td>
+                        <td>5</td>
+                        <td>Basic sentiment analysis implementation</td>
+                    </tr>
+                    <tr>
+                        <td>Term Weighting</td>
+                        <td>TF-IDF</td>
+                        <td>15</td>
+                        <td>10</td>
+                        <td>TF-IDF vectorization for search</td>
+                    </tr>
+                    <tr>
+                        <td>Term Similarity</td>
+                        <td>Similarity Measures</td>
+                        <td>12</td>
+                        <td>5</td>
+                        <td>Basic fuzzy matching (fuzzywuzzy)</td>
+                    </tr>
+                    <tr>
+                        <td>Search Relevance</td>
+                        <td>Effectiveness Measures</td>
+                        <td>10</td>
+                        <td>5</td>
+                        <td>Basic similarity scoring</td>
+                    </tr>
+                    <tr>
+                        <td>Document Similarity</td>
+                        <td>Similarity Metrics</td>
+                        <td>20</td>
+                        <td>15</td>
+                        <td>Cosine, Dice, Jaccard similarity</td>
+                    </tr>
+                    <tr>
+                        <td>Text Analysis</td>
+                        <td>Analysis Features</td>
+                        <td>40</td>
+                        <td>20</td>
+                        <td>Sentiment analysis, language detection</td>
+                    </tr>
+                    <tr>
+                        <td>Visualization</td>
+                        <td>Chart Types</td>
+                        <td>20</td>
+                        <td>12</td>
+                        <td>Interactive rating, genre, year distributions</td>
+                    </tr>
+                    <tr>
+                        <td>Cache Implementation</td>
+                        <td>Results Caching</td>
+                        <td>5</td>
+                        <td>5</td>
+                        <td>Flask-Caching implementation</td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="3"><strong>Total Points</strong></td>
+                        <td><strong>136</strong></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+.section {
+    background: var(--nav-bg);
+    padding: 2rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.details-table {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+th, td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--input-bg);
+}
+
+th {
+    background: var(--input-bg);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+td {
+    vertical-align: top;
+}
+
+tr:hover {
+    background: var(--input-bg);
+}
+
+tfoot tr {
+    background: var(--input-bg);
+    font-weight: 600;
+}
+</style>
+{% endblock %}

@@ -1,4 +1,3 @@
-<!-- search.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -16,6 +15,7 @@
             color: var(--text);
             font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, sans-serif;
             margin: 0;
+            line-height: 1.6;
         }
         .nav {
             background: var(--nav-bg);
@@ -28,16 +28,17 @@
             margin-right: 2rem;
         }
         .search-container {
+            max-width: 1200px;
+            margin: 2rem auto;
             padding: 2rem;
-            margin: 2rem;
-            border-radius: 8px;
             background: var(--nav-bg);
+            border-radius: 8px;
         }
         .search-box {
             display: flex;
-            gap: 1rem;
-            max-width: 1200px;
-            margin: 0 auto;
+            flex-direction: column;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
         }
         .search-input {
             flex: 1;
@@ -69,54 +70,150 @@
         .search-button:hover {
             opacity: 0.9;
         }
+        .filters-row {
+            display: flex;
+            gap: 1.5rem;
+            align-items: flex-end;
+            justify-content: center;
+            width: 100%;
+        }
+        .filters-row > div {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .stats-container {
+            text-align: center;
+            padding-top: 1.5rem;
+            margin-top: 1.5rem;
+            border-top: 1px solid var(--input-bg);
+        }
         .result-card {
-            background: var(--nav-bg);
-            padding: 1rem;
-            margin: 1rem 2rem;
+            background: var(--input-bg);
+            padding: 1.5rem;
+            margin: 1rem 0;
             border-radius: 6px;
+        }
+        .result-card h3 {
+            margin: 0 0 0.5rem 0;
+            color: var(--accent);
+        }
+        .result-card .meta-tag {
+            display: inline-block;
+            background: var(--nav-bg);
+            padding: 0.4rem 0.8rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .result-card a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .result-card a:hover {
+            text-decoration: underline;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
         }
     </style>
 </head>
 <body>
     <nav class="nav">
         <a href="/" onclick="window.location='/search'; return false;">Home</a>
-    </nav>    
+        <a href="/visualizations">Visualizations</a>
+        <a href="/about">About</a>
+    </nav>
     <div class="search-container">
         <form action="/search" method="GET" class="search-box">
-            <label for="search-input" style="display:none;">Search</label>
-            <input id="search-input" type="text" name="q" class="search-input" placeholder="Search music reviews..." value="{{ query }}">
-            <label for="method-select" style="display:none;">Search Method</label>
-            <select id="method-select" name="method" class="search-select">
-                <option value="cosine" {% if method == 'cosine' %}selected{% endif %}>Cosine</option>
-                <option value="dice" {% if method == 'dice' %}selected{% endif %}>Dice</option>
-                <option value="jaccard" {% if method == 'jaccard' %}selected{% endif %}>Jaccard</option>
-            </select>
-            <button type="submit" class="search-button">Search</button>
+            <div style="display: flex; gap: 1rem; width: 100%;">
+                <input type="text" name="q" class="search-input" placeholder="Search music reviews..." value="{{ query or '' }}">
+                <select name="method" class="search-select">
+                    <option value="cosine" {% if method == 'cosine' %}selected{% endif %}>Cosine</option>
+                    <option value="dice" {% if method == 'dice' %}selected{% endif %}>Dice</option>
+                    <option value="jaccard" {% if method == 'jaccard' %}selected{% endif %}>Jaccard</option>
+                </select>
+                <button type="submit" class="search-button">Search</button>
+            </div>
+
+            <div class="filters-row">
+                <div>
+                    <label>Language</label>
+                    <select name="language" class="search-select">
+                        <option value="">All</option>
+                        {% for lang in languages %}
+                        <option value="{{ lang }}" {% if lang == language %}selected{% endif %}>{{ lang|upper }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div>
+                    <label>Year</label>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="number" name="year_from" placeholder="From" value="{{ year_from or '' }}" class="search-input" style="width:80px">
+                        <input type="number" name="year_to" placeholder="To" value="{{ year_to or '' }}" class="search-input" style="width:80px">
+                    </div>
+                </div>
+                
+                <div>
+                    <label>Rating</label>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <select name="rating_from" class="search-select" style="width:80px">
+                            <option value="">From</option>
+                            {% for r in range(0, 51, 5) %}
+                            <option value="{{ r/10 }}" {% if rating_from == r/10 %}selected{% endif %}>{{ "%.1f"|format(r/10) }}</option>
+                            {% endfor %}
+                        </select>
+                        <select name="rating_to" class="search-select" style="width:80px">
+                            <option value="">To</option>
+                            {% for r in range(0, 51, 5) %}
+                            <option value="{{ r/10 }}" {% if rating_to == r/10 %}selected{% endif %}>{{ "%.1f"|format(r/10) }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <div>
+                    <label>Genre</label>
+                    <select name="genre" class="search-select">
+                        <option value="">All</option>
+                        {% for g in genres %}
+                        <option value="{{ g }}" {% if g == genre %}selected{% endif %}>{{ g }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
         </form>
-        <div class="stats-container" style="text-align: center; padding-top: 1.5rem; margin-top: 1.5rem; border-top: 1px solid var(--input-bg);">
+
+        <div class="stats-container">
             <span>Total Albums: {{ album_count }}</span> 
             <span style="margin: 0 1rem;">|</span>
             <span>Total Reviews: {{ review_count }}</span>
         </div>
-    </div>
 
-    {% if results %}
-        {% for result in results %}
-        <div class="result-card">
-            <div>{{ result.preview }}</div>
-            {% if result.album %}
-            <div style="color: var(--accent); margin: 0.5rem 0;">{{ result.album }}</div>
-            {% endif %}
-            <div style="display: flex; justify-content: space-between; margin-top: 1rem;">
-                <span style="opacity: 0.7;">Match: {{ result.score }} | Relevance: {{ result.relevance }}</span>
-                <a href="/review/{{ result.id }}" style="color: var(--accent);">Read full review →</a>
+        {% if results %}
+            {% for result in results %}
+            <div class="result-card">
+                <h3>{{ result.album if result.album else "Unknown Album" }}</h3>
+                <div>{{ result.preview }}</div>
+                <div style="margin-top: 1rem;">
+                    <span class="meta-tag">Match: {{ result.score }}</span>
+                    <span class="meta-tag">Relevance: {{ result.relevance }}</span>
+                    <a href="/review/{{ result.id }}" style="color: var(--accent);">Read full review →</a>
+                </div>
             </div>
-        </div>
-        {% endfor %}
-    {% else %}
-        <div style="text-align: center; margin-top: 2rem;">
-            <p>No results found. Try another search term or method.</p>
-        </div>
-    {% endif %}
+            {% endfor %}
+        {% else %}
+            <div style="text-align: center; margin-top: 2rem;">
+                <p>No results found. Try another search term or method.</p>
+            </div>
+        {% endif %}
+    </div>
 </body>
 </html>
